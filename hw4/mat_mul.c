@@ -13,15 +13,13 @@ int validation = 0;
 const char * ktranspose =
 "__kernel void transpose(__global const float* src, __global float* dest, \n"
 "__local float *buf, int NDIM) {\n"
-"    size_t X = get_group_id(0);\n"
-"    size_t Y = get_group_id(1);\n"
-"    size_t x = get_local_id(0);\n"
-"    size_t y = get_local_id(1);\n"
-"    buf[x*8 + y] = src[(Y*8+y)*NDIM + X*8 + x];\n"
+"    size_t X = get_global_id(0);\n"
+"    size_t Y = get_global_id(1);\n"
+"    buf[get_local_id(1)*9 + get_local_id(0)] = src[Y*NDIM+X];\n"
 "    barrier(CLK_LOCAL_MEM_FENCE);\n"
-"    X = get_group_id(1) * 8 + x;\n"
-"    Y = get_group_id(0) * 8 + y;\n"
-"    dest[Y*NDIM + X] = buf[y*8 + x];\n"
+"    X = get_group_id(1) * 8 + get_local_id(0);\n"
+"    Y = get_group_id(0) * 8 + get_local_id(1);\n"
+"    dest[Y*NDIM + X] = buf[get_local_id(0)*9 + get_local_id(1)];\n"
 "}";
 const char * kmat_mult =
 "__kernel void mat_mult(__global const float* A, __global const float* B, \n"
@@ -29,7 +27,7 @@ const char * kmat_mult =
 "    size_t X = get_group_id(0)*64;\n"
 "    size_t x = get_local_id(0);\n"
 "    float sum = 0;\n"
-"    size_t Y = X&(D-1);\n"
+"    size_t Y = X%D;\n"
 "    Y = Y + x;\n"
 "    Y = Y*D;\n"
 "    for(int k = 0; k < D; k++)\n"
@@ -74,16 +72,16 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
 #ifdef TRANSMUL
         size_t len = strlen(ktranspose);
         cl_program ptrans = clCreateProgramWithSource(context, 1, (const char**) &ktranspose, &len, &res); where++; if( res != CL_SUCCESS ) break;// 9
-        res = clBuildProgram(ptrans, 1, device, NULL, NULL, &res); where++; if( res != CL_SUCCESS ) break; // 10
+        res = clBuildProgram(ptrans, 1, device, NULL, NULL, NULL); where++; if( res != CL_SUCCESS ) break; // 10
         cl_kernel trans = clCreateKernel(ptrans, "transpose", NULL); where++; if( res != CL_SUCCESS ) break; // 11
         len = strlen(kmat_mult);
         cl_program pmul = clCreateProgramWithSource(context, 1, (const char**) &kmat_mult, &len, &res); where++; if( res != CL_SUCCESS ) break; // 12
-        res = clBuildProgram(pmul, 1, device, NULL, NULL, &res); where++; if( res != CL_SUCCESS ) break; // 13
+        res = clBuildProgram(pmul, 1, device, NULL, NULL, NULL); where++; if( res != CL_SUCCESS ) break; // 13
         cl_kernel mult = clCreateKernel(pmul, "mat_mult", &res); where++; if( res != CL_SUCCESS ) break; // 14
         // trans
         res = clSetKernelArg(trans, 0, sizeof(cl_mem), (void*) &B); where++; if( res != CL_SUCCESS ) break; // 15
         res = clSetKernelArg(trans, 1, sizeof(cl_mem), (void*) &BT); where++; if( res != CL_SUCCESS ) break; // 16
-        res = clSetKernelArg(trans, 2, sizeof(8*8*sizeof(float)), NULL); where++; if( res != CL_SUCCESS ) break; // 17
+        res = clSetKernelArg(trans, 2, sizeof(9*8*sizeof(float)), NULL); where++; if( res != CL_SUCCESS ) break; // 17
         res = clSetKernelArg(trans, 3, sizeof(int), (void*) &NDIM); where++; if( res != CL_SUCCESS ) break; // 18
         // mult
         res = clSetKernelArg(mult, 0, sizeof(cl_mem), (void*) &A); where++; if( res != CL_SUCCESS ) break; // 19
@@ -96,11 +94,12 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
         res = clEnqueueNDRangeKernel(q, trans, 2, NULL, tg, tl, 0, NULL, NULL); where++; if( res != CL_SUCCESS ) break;
         size_t global[] = {NDIM * NDIM};
         size_t local[] = {8 * 8};
+        printf("enque mul\n");
         res = clEnqueueNDRangeKernel(q, mult, 1, NULL, global, local, 0, NULL, NULL); where++; if( res != CL_SUCCESS ) break;
 #else
         size_t len = strlen(kmat_mul);
         cl_program program = clCreateProgramWithSource(context, 1, (const char**) &kmat_mul, &len, &res); where++; if( res != CL_SUCCESS ) break;
-        res = clBuildProgram(program, 1, device, NULL, NULL, &res); where++; if( res != CL_SUCCESS ) break;
+        res = clBuildProgram(program, 1, device, NULL, NULL, NULL); where++; if( res != CL_SUCCESS ) break;
         cl_kernel mul = clCreateKernel(program, "mat_mul", &res); where++; if( res != CL_SUCCESS ) break;
         clSetKernelArg(mul, 0, sizeof(cl_mem), (void*) &A);
         clSetKernelArg(mul, 1, sizeof(cl_mem), (void*) &B);
@@ -108,9 +107,9 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
         clSetKernelArg(mul, 3, sizeof(int), (void*) &(NDIM));
         size_t global[] = {NDIM * NDIM};
         size_t local[] = {8 * 8};
-        res = clEnqueueNDRangeKernel(q, mul, 1, NULL, global, local, 0, NULL, NULL);
+        res = clEnqueueNDRangeKernel(q, mul, 1, NULL, global, local, 0, NULL, NULL); where++; if (res != CL_SUCCESS) break;
 #endif
-        if (res != CL_SUCCESS) ;
+        printf("done");
         clEnqueueReadBuffer(q, C, CL_TRUE, 0, size, c, 0, NULL, NULL);
     } while(0);
     if (res != CL_SUCCESS) printf("failed with : %d at %d \n", res, where);

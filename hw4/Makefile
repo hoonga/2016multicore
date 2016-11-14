@@ -2,13 +2,13 @@ TARGET=mat_mul
 OBJS=mat_mul.o timers.o
 
 CC=gcc
-CFLAGS= -g -O2 -Wall -I"/usr/include/CL"
-LDFLAGS= -lOpenCL
+CFLAGS= -g -O2 -Wall -DTRANSMUL
+LDFLAGS= -I"/usr/include/CL" -lOpenCL 
 
 all: $(TARGET)
 
 $(TARGET):$(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) -o $@
+	$(CC) $(OBJS) -o $@ $(LDFLAGS) 
 
 clean:
 	rm -rf $(TARGET) $(OBJS) task*
