@@ -1,17 +1,16 @@
-TARGET=mat_mul
-OBJS=mat_mul.o timers.o
-
+TARGET=GPU1 GPU2 GPU4 CPU CPUGPU1 CPUGPU4
+OBJS=timers.o
 CC=gcc
-CFLAGS=-g -O2 -Wall
-LDFLAGS=
+CFLAGS_=-g -O2 -Wall
+LDFLAGS=-I"/usr/include/CL" -lOpenCL
 
 all: $(TARGET)
 
 $(TARGET):$(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) -o $@
+	$(CC) $(LDFLAGS) -DFLAG=$@ mat_mul.c $(OBJS) -o $@ 
 
 clean:
 	rm -rf $(TARGET) $(OBJS) task*
 
 run: $(TARGET)
-	thorq --add ./$(TARGET) 4096 -v
+	thorq --add ./$(TARGET) 8912 -v

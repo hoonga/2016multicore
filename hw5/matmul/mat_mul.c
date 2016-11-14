@@ -4,25 +4,47 @@
 #include <stdlib.h>
 #include <time.h>
 #include "timers.h"
+#include <CL/opencl.h>
+
+#define GPU1 1
+#define GPU2 2
+#define GPU4 3
+#define CPU 4
+#define CPUGPU1 5
+#define CPUGPU4 6
 
 int print_matrix = 0;
 int validation = 0;
 
 void mat_mul( float * c, float * a, float * b, int NDIM )
 {
-	int i, j, k;
-	
-	// C = AB
-	for( i = 0; i < NDIM; i++ )
-	{
-		for( j = 0; j < NDIM; j++ )
-		{
-			for( k = 0; k < NDIM; k++ )
-			{
-				c[i * NDIM + j] += a[i * NDIM + k] * b[k * NDIM + j];
-			}
-		}
-	}
+    cl_plat_form_id platform;
+    clGetPlatformIDs(1, &platform, NULL);
+
+    // expecting very low overhead when making environments
+    size_t cpun;
+    cl_device_id cpus[4];
+    clGetDeviceIDs(platform, CL_DEVICE_CPU, 0, NULL, &cpun);
+    clGetDeviceIDs(platform, CL_DEVICE_CPU, cpun, cpus, NULL);
+    size_t gpun;
+    cl_device_id gpus[4];
+    clGetDeviceIDs(platform, CL_DEVICE_GPU, 0, NULL, &gpun);
+    clGetDeviceIDs(platform, CL_DEVICE_GPU, gpun, gpus, NULL);
+
+    cl_context context;
+    cl_command_queue q[6];
+    cl_program;
+    cl_kernel kernel[6];
+    cl_mem A;
+    cl_mem B;
+    cl_mem C;
+#if FLAG == GPU1
+#elif FLAG == GPU2
+#elif FLAG == GPU4
+#elif FLAG == CPU
+#elif FLAG == CPUGPU1
+#elif FLAG == CPUGPU4
+#endif
 }
 
 /************************** DO NOT TOUCH BELOW HERE ******************************/
