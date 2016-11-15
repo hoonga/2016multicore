@@ -99,20 +99,9 @@ void CL_CHECK(cl_int err) {
 }
 
 const char* kernels[] = {
-"__kernel void transpose(__global const float* src,"
-                        "__global float* dest,"
-                        "__local float *buf, int NDIM) {"
-"    size_t X = get_global_id(0);"
-"    size_t Y = get_global_id(1);"
-"    buf[get_local_id(1)*9 + get_local_id(0)] = src[Y*NDIM+X];"
-"    barrier(CLK_LOCAL_MEM_FENCE);"
-"    X = get_group_id(1) * 8 + get_local_id(0);"
-"    Y = get_group_id(0) * 8 + get_local_id(1);"
-"    dest[Y*NDIM + X] = buf[get_local_id(0)*9 + get_local_id(1)];"
-"};\n"
 "__kernel void mat_mul_trans(__global const float* A,"
                        "__global const float* B,"
-                       "__global float* C, int D) {"
+                       "__global float* C, __local float* BT, int D) {"
 "    size_t X = get_group_id(0)*64;\n"
 "    size_t x = get_local_id(0);\n"
 "    float sum = 0;\n"
@@ -147,15 +136,16 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
     CL_CHECK(clGetPlatformIDs(1, platform, NULL));
 
     // get all devices
-#define GPUS FLAG&7
-#define CPUS FLAG>>3
+#define GPUS (FLAG&7)
+#define CPUS (FLAG>>3)
+    int numdev = GPUS+CPUS;
     puts("getting devices");
-    cl_device_id device[(GPUS)+(CPUS)];
+    cl_device_id device[numdev];
 #if (GPUS) != 0
     cl_device_id gpus[GPUS];
     puts("getting gpus");
     CL_CHECK(clGetDeviceIDs(platform[0], CL_DEVICE_TYPE_GPU, 4, gpus, NULL));
-    for (int i = 0; i < (GPUS); i++) {
+    for (int i = 0; i < GPUS; i++) {
         device[i] = gpus[i];
     }
 #endif
@@ -168,23 +158,25 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
     
     // create context
     puts("creating context");
-    cl_context context = clCreateContext(0, (GPUS)+(CPUS), device, NULL, NULL, &res); CL_CHECK(res);
+    cl_context context = clCreateContext(0, numdev, device, NULL, NULL, &res); CL_CHECK(res);
 
     // create queues
     puts("creating queues");
-    cl_command_queue q[(GPUS)+(CPUS)]; 
-    for (int i = 0; i < (GPUS)+(CPUS); i++) {
+    cl_command_queue q[numdev]; 
+    for (int i = 0; i < numdev; i++) {
         printf("q[%d] done\n", i);
         q[i] = clCreateCommandQueue(context, device[i], 0, NULL);
     }
 
     // buffers
-    cl_mem A[(CPUS)+(GPUS)];
-    cl_mem B[(CPUS)+(GPUS)];
-    cl_mem C[(CPUS)+(GPUS)];
-    A = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, a, &res);
-    B = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, b, &res);
-    C = clCreateBuffer(context, CL_MEM_WRITE_ONLY, size, NULL, &res);
+    cl_mem A[numdev];
+    cl_mem B[numdev];
+    cl_mem C[numdev];
+    for (int i = 0; i < (GPUS); i++) {
+        A = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, a, &res);
+        B = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, b, &res);
+        C = clCreateBuffer(context, CL_MEM_WRITE_ONLY, size, NULL, &res);
+    }
 
     // make program
     puts("compiling");
@@ -194,30 +186,20 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
 
     // make kernels
 #if (CPUS) != 0
-    cl_mem BT[(CPUS)+(GPUS)];
-    BT = clCreateBuffer(context, CL_MEM_READ_WRITE, size, NULL, &res);
-
-    puts("transpose kernel");
-    cl_kernel trans = clCreateKernel(program, "transpose", &res); CL_CHECK(res);
-    // trans
-    CL_CHECK(clSetKernelArg(trans, 0, sizeof(cl_mem), (void*) &B));
-    CL_CHECK(clSetKernelArg(trans, 1, sizeof(cl_mem), (void*) &BT));
-    CL_CHECK(clSetKernelArg(trans, 2, sizeof(9*8*sizeof(float)), NULL));
-    CL_CHECK(clSetKernelArg(trans, 3, sizeof(int), (void*) &NDIM));
-
     puts("mul_trans kernel");
     cl_kernel mul_trans = clCreateKernel(program, "mat_mul_trans", &res); CL_CHECK(res);
     // trans mult
     CL_CHECK(clSetKernelArg(mul_trans, 0, sizeof(cl_mem), (void*) &A));
     CL_CHECK(clSetKernelArg(mul_trans, 1, sizeof(cl_mem), (void*) &B));
     CL_CHECK(clSetKernelArg(mul_trans, 2, sizeof(cl_mem), (void*) &C));
-    CL_CHECK(clSetKernelArg(mul_trans, 3, sizeof(int), (void*) &NDIM));
-
-    // run transpose
-    size_t tg[] = {NDIM, NDIM};
-    size_t tl[] = {8, 8};
-    CL_CHECK(clEnqueueNDRangeKernel(q[0], trans, 2, NULL, tg, tl, 0, NULL, NULL));
+    CL_CHECK(clSetKernelArg(mul_trans, 3, sizeof(float)*8*8, NULL));
+    CL_CHECK(clSetKernelArg(mul_trans, 4, sizeof(int), (void*) &NDIM));
+    // enque
+    size_t global[] = {NDIM * NDIM};
+    size_t local[] = {8 * 8};
+    CL_CHECK(clEnqueueNDRangeKernel(q[0], mult, 1, NULL, global, local, 0, NULL, NULL));
 #endif
+#if (GPUS) != 0
     puts("mul_naive kernel");
     cl_kernel mul_naive = clCreateKernel(program, "mat_mult", &res); CL_CHECK(res);
 
@@ -226,11 +208,12 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
     CL_CHECK(clSetKernelArg(mul_naive, 1, sizeof(cl_mem), (void*) &B));
     CL_CHECK(clSetKernelArg(mul_naive, 2, sizeof(cl_mem), (void*) &C));
     CL_CHECK(clSetKernelArg(mul_naive, 3, sizeof(int), (void*) &NDIM));
-
     // enque
     size_t global[] = {NDIM * NDIM};
     size_t local[] = {8 * 8};
     CL_CHECK(clEnqueueNDRangeKernel(q[0], mult, 1, NULL, global, local, 0, NULL, NULL));
+#endif
+
     CL_CHECK(clEnqueueReadBuffer(q[0], C, CL_TRUE, 0, size, c, 0, NULL, NULL));
 }
 
