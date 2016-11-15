@@ -139,17 +139,21 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
 #define GPUS FLAG&7
 #define CPUS FLAG>>3
     puts("getting devices");
-    cl_device_id gpus[GPUS];
-    cl_device_id cpus[CPUS];
     cl_device_id device[(GPUS)+(CPUS)];
+#if (GPUS) != 0
+    cl_device_id gpus[GPUS];
     puts("getting gpus");
     CL_CHECK(clGetDeviceIDs(platform[0], CL_DEVICE_TYPE_GPU, 4, gpus, NULL));
-    puts("getting cpus");
-    CL_CHECK(clGetDeviceIDs(platform[0], CL_DEVICE_TYPE_CPU, 1, cpus, NULL));
     for (int i = 0; i < (GPUS); i++) {
         device[i] = gpus[i];
     }
+#endif
+#if (CPUS) != 0
+    puts("getting cpus");
+    cl_device_id cpus[CPUS];
+    CL_CHECK(clGetDeviceIDs(platform[0], CL_DEVICE_TYPE_CPU, 1, cpus, NULL));
     device[GPUS] = cpus[0];
+#endif
     
     // create context
     puts("creating context");
