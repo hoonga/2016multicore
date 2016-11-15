@@ -7,7 +7,7 @@ LDFLAGS=-I"/usr/include/CL" -lOpenCL
 all: $(TARGET)
 
 $(TARGET):$(OBJS)
-	$(CC) $(LDFLAGS) -DFLAG=$@ mat_mul.c $(OBJS) -o $@ 
+	$(CC) -DFLAG=$@ mat_mul.c $(OBJS) -o $@ $(LDFLAGS) 
 
 clean:
 	rm -rf $(TARGET) $(OBJS) task*
