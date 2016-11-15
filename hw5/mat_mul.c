@@ -104,7 +104,6 @@ const char* kernels[] = {
                         "__local float *buf, int NDIM) {"
 "    size_t X = get_global_id(0);"
 "    size_t Y = get_global_id(1);"
-"    printf(\"%d\\n\", X);"
 "    buf[get_local_id(1)*9 + get_local_id(0)] = src[Y*NDIM+X];"
 "    barrier(CLK_LOCAL_MEM_FENCE);"
 "    X = get_group_id(1) * 8 + get_local_id(0);"
