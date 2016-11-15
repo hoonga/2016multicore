@@ -1,13 +1,13 @@
 TARGET=GPU1 GPU2 GPU4 CPU CPUGPU1 CPUGPU4
 OBJS=timers.o
 CC=gcc
-CFLAGS_=-g -O2 -Wall
+CFLAGS=-g -O2 -Wall -std=c99
 LDFLAGS=-I"/usr/include/CL" -lOpenCL
 
 all: $(TARGET)
 
 $(TARGET):$(OBJS)
-	$(CC) -DFLAG=$@ mat_mul.c $(OBJS) -o $@ $(LDFLAGS) 
+	$(CC) $(CFLAGS) -DFLAG=$@ mat_mul.c $(OBJS) -o $@ $(LDFLAGS) 
 
 clean:
 	rm -rf $(TARGET) $(OBJS) task*
