@@ -160,12 +160,14 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
     // load balancing (most case equal, if cpus+gpu4 little more weight on cpu)
 #if FLAG == GPU1 || FLAG == CPU
     size_t load[1] = { NDIM };
-#elif FLAG == GPU2 || FLAG == CPUGPU1
+#elif FLAG == GPU2
     size_t load[2] = { NDIM/2, NDIM/2 };
+#elif FLAG == CPUGPU1
+    size_t load[2] = { 7*NDIM/8, NDIM/8 };
 #elif FLAG == GPU4
     size_t load[4] = { NDIM/4, NDIM/4, NDIM/4, NDIM/4 };
 #elif FLAG == CPUGPU4
-    size_t load[5] = { 3*NDIM/16, 3*NDIM/16, 3*NDIM/16, 3*NDIM/16, 4*NDIM/16 };
+    size_t load[5] = { 7*NDIM/32, 7*NDIM/32, 7*NDIM/32, 7*NDIM/32, 4*NDIM/32 };
 #endif
 
     // buffers
