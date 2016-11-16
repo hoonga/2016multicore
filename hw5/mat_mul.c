@@ -99,28 +99,18 @@ void CL_CHECK(cl_int err) {
 }
 
 const char* kernels[] = {
-"__kernel void mat_mul_trans(__global const float* A,"
-                       "__global const float* B,"
-                       "__global float* C, __local float* BT, int D) {"
-"    size_t X = get_group_id(0)*64;\n"
-"    size_t x = get_local_id(0);\n"
-"    float sum = 0;\n"
-"    size_t Y = X%D;\n"
-"    Y = Y + x;\n"
-"    Y = Y*D;\n"
-"    for(int k = 0; k < D; k++)\n"
-"        sum += A[X/D*D + k] * B[Y + k];\n"
-"    C[X + x] = sum;\n"
-"}"
-"__kernel void mat_mult(__global const float* A"
+"__kernel void mat_mult(__global const float* A,"
                        "__global const float *B,"
                        "__global float *C, int D) {"
-"    size_t X = get_group_id(0)*64;\n"
+"    size_t X = get_group_id(0)*8;\n"
+"    size_t Y = get_group_id(1)*8;\n"
 "    size_t x = get_local_id(0);\n"
+"    size_t y = get_local_id(1);\n"
 "    float sum = 0;\n"
-"    for(int k = 0; k < D; k++)\n"
-"        sum += A[X/D*D + k] * B[k*D+X%D+x];\n"
-"    C[X + x] = sum;\n"
+"    for(int k = 0; k < D; k++) {\n"
+"        sum += A[(Y+y)*D + k] * B[k*D+(X+x)];\n"
+"    }"
+"    C[(Y+y)*D+X+x] = sum;\n"
 "}"
 };
 
@@ -170,51 +160,43 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
 
     // buffers
     cl_mem A[numdev];
-    cl_mem B[numdev];
     cl_mem C[numdev];
-    for (int i = 0; i < (GPUS); i++) {
-        A = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, a, &res);
-        B = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, b, &res);
-        C = clCreateBuffer(context, CL_MEM_WRITE_ONLY, size, NULL, &res);
+    for (int i = 0; i < numdev; i++) {
+        A[i] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, (i==numdev-1)?sizeof(float)*NDIM*(NDIM-NDIM/numdev*(numdev-1)):size/numdev, a+i*NDIM*NDIM/numdev, &res);
+        C[i] = clCreateBuffer(context, CL_MEM_WRITE_ONLY, (i==numdev-1)?sizeof(float)*NDIM*(NDIM-NDIM/numdev*(numdev-1)):size/numdev, NULL, &res);
     }
+    cl_mem B;
+    B = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, b, &res);
 
     // make program
     puts("compiling");
     cl_program program = clCreateProgramWithSource(context, 1, kernels, NULL, &res); CL_CHECK(res);
     puts("building");
-    CL_CHECK(clBuildProgram(program, (GPUS)+(CPUS), device, NULL, NULL, NULL));
+    CL_CHECK(clBuildProgram(program, numdev, device, NULL, NULL, NULL));
 
     // make kernels
-#if (CPUS) != 0
-    puts("mul_trans kernel");
-    cl_kernel mul_trans = clCreateKernel(program, "mat_mul_trans", &res); CL_CHECK(res);
-    // trans mult
-    CL_CHECK(clSetKernelArg(mul_trans, 0, sizeof(cl_mem), (void*) &A));
-    CL_CHECK(clSetKernelArg(mul_trans, 1, sizeof(cl_mem), (void*) &B));
-    CL_CHECK(clSetKernelArg(mul_trans, 2, sizeof(cl_mem), (void*) &C));
-    CL_CHECK(clSetKernelArg(mul_trans, 3, sizeof(float)*8*8, NULL));
-    CL_CHECK(clSetKernelArg(mul_trans, 4, sizeof(int), (void*) &NDIM));
-    // enque
-    size_t global[] = {NDIM * NDIM};
-    size_t local[] = {8 * 8};
-    CL_CHECK(clEnqueueNDRangeKernel(q[0], mult, 1, NULL, global, local, 0, NULL, NULL));
-#endif
-#if (GPUS) != 0
+    cl_kernel mul_naive[numdev];
     puts("mul_naive kernel");
-    cl_kernel mul_naive = clCreateKernel(program, "mat_mult", &res); CL_CHECK(res);
-
-    // naive mult
-    CL_CHECK(clSetKernelArg(mul_naive, 0, sizeof(cl_mem), (void*) &A));
-    CL_CHECK(clSetKernelArg(mul_naive, 1, sizeof(cl_mem), (void*) &B));
-    CL_CHECK(clSetKernelArg(mul_naive, 2, sizeof(cl_mem), (void*) &C));
-    CL_CHECK(clSetKernelArg(mul_naive, 3, sizeof(int), (void*) &NDIM));
-    // enque
-    size_t global[] = {NDIM * NDIM};
-    size_t local[] = {8 * 8};
-    CL_CHECK(clEnqueueNDRangeKernel(q[0], mult, 1, NULL, global, local, 0, NULL, NULL));
-#endif
-
-    CL_CHECK(clEnqueueReadBuffer(q[0], C, CL_TRUE, 0, size, c, 0, NULL, NULL));
+    size_t global[numdev][2];
+    size_t local[numdev][2];
+    for (int i = 0; i < numdev; i++) {
+        mul_naive[i] = clCreateKernel(program, "mat_mult", &res); CL_CHECK(res);
+        // naive mult
+        CL_CHECK(clSetKernelArg(mul_naive[i], 0, sizeof(cl_mem), (void*) &A[i]));
+        CL_CHECK(clSetKernelArg(mul_naive[i], 1, sizeof(cl_mem), (void*) &B));
+        CL_CHECK(clSetKernelArg(mul_naive[i], 2, sizeof(cl_mem), (void*) &C[i]));
+        CL_CHECK(clSetKernelArg(mul_naive[i], 3, sizeof(int), (void*) &NDIM));
+        global[i][0] = NDIM;
+        global[i][1] = (i==numdev-1)?(NDIM-NDIM/numdev*(numdev-1)):NDIM/numdev;
+        local[i][0] = 8;
+        local[i][1] = 8;
+        // enque
+        puts("enqueued");
+        CL_CHECK(clEnqueueNDRangeKernel(q[i], mul_naive[i], 2, NULL, global[i], local[i], 0, NULL, NULL));
+    }
+    for (int i = 0; i < numdev; i++) {
+        CL_CHECK(clEnqueueReadBuffer(q[i], C[i], CL_TRUE, 0, (i==numdev-1)?sizeof(float)*NDIM*(NDIM-NDIM/numdev*(numdev-1)):size/numdev, c+i*NDIM*NDIM/numdev, 0, NULL, NULL));
+    }
 }
 
 /************************** DO NOT TOUCH BELOW HERE ******************************/

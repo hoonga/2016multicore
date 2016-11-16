@@ -59,7 +59,7 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
     do {
         // prepare
         res = clGetPlatformIDs(1, platform, &numdev); where++; if( res != CL_SUCCESS ) break; // 1
-        res = clGetDeviceIDs(platform[0], CL_DEVICE_TYPE_CPU, 1, device, &numdev); where++; if( res != CL_SUCCESS ) break; // 2
+        res = clGetDeviceIDs(platform[0], CL_DEVICE_TYPE_GPU, 1, device, &numdev); where++; if( res != CL_SUCCESS ) break; // 2
         cl_context context = clCreateContext(0, 1, device, NULL, NULL, &res); where++; if( res != CL_SUCCESS ) break; // 3
         cl_command_queue q = clCreateCommandQueue(context, device[0], 0, NULL); where++; if( res != CL_SUCCESS ) break; // 4
         cl_mem A, B, C;
