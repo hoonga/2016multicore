@@ -145,7 +145,6 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
     CL_CHECK(clGetDeviceIDs(platform[0], CL_DEVICE_TYPE_CPU, 1, cpus, NULL));
     device[GPUS] = cpus[0];
 #endif
-    
     // create context
     puts("creating context");
     cl_context context = clCreateContext(0, numdev, device, NULL, NULL, &res); CL_CHECK(res);
@@ -158,12 +157,24 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
         q[i] = clCreateCommandQueue(context, device[i], 0, NULL);
     }
 
+    // load balancing (most case equal, if cpus+gpu4 little more weight on cpu)
+#if FLAG == GPU1 || FLAG == CPU
+    size_t load[1] = { NDIM };
+#elif FLAG == GPU2 || FLAG == CPUGPU1
+    size_t load[2] = { NDIM/2, NDIM/2 };
+#elif FLAG == GPU4
+    size_t load[4] = { NDIM/4, NDIM/4, NDIM/4, NDIM/4 };
+#elif FLAG == CPUGPU4
+    size_t load[5] = { 3*NDIM/16, 3*NDIM/16, 3*NDIM/16, 3*NDIM/16, 4*NDIM/16 };
+#endif
+
     // buffers
     cl_mem A[numdev];
     cl_mem C[numdev];
     for (int i = 0; i < numdev; i++) {
-        A[i] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, (i==numdev-1)?sizeof(float)*NDIM*(NDIM-NDIM/numdev*(numdev-1)):size/numdev, a+i*NDIM*NDIM/numdev, &res);
-        C[i] = clCreateBuffer(context, CL_MEM_WRITE_ONLY, (i==numdev-1)?sizeof(float)*NDIM*(NDIM-NDIM/numdev*(numdev-1)):size/numdev, NULL, &res);
+        A[i] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*NDIM*load[i], a+i*NDIM*load[i-1], &res);
+        // dangerous to access load[0-1] tho it's multiplyed by 0
+        C[i] = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(float)*NDIM*load[i], NULL, &res);
     }
     cl_mem B;
     B = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, b, &res);
@@ -187,7 +198,7 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
         CL_CHECK(clSetKernelArg(mul_naive[i], 2, sizeof(cl_mem), (void*) &C[i]));
         CL_CHECK(clSetKernelArg(mul_naive[i], 3, sizeof(int), (void*) &NDIM));
         global[i][0] = NDIM;
-        global[i][1] = (i==numdev-1)?(NDIM-NDIM/numdev*(numdev-1)):NDIM/numdev;
+        global[i][1] = load[i];
         local[i][0] = 8;
         local[i][1] = 8;
         // enque
@@ -195,7 +206,7 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
         CL_CHECK(clEnqueueNDRangeKernel(q[i], mul_naive[i], 2, NULL, global[i], local[i], 0, NULL, NULL));
     }
     for (int i = 0; i < numdev; i++) {
-        CL_CHECK(clEnqueueReadBuffer(q[i], C[i], CL_TRUE, 0, (i==numdev-1)?sizeof(float)*NDIM*(NDIM-NDIM/numdev*(numdev-1)):size/numdev, c+i*NDIM*NDIM/numdev, 0, NULL, NULL));
+        CL_CHECK(clEnqueueReadBuffer(q[i], C[i], CL_TRUE, 0, sizeof(float)*NDIM*load[i], c+i*NDIM*load[i-1], 0, NULL, NULL));
     }
 }
 
