@@ -4,25 +4,34 @@
 #include <stdlib.h>
 #include <time.h>
 #include "timers.h"
+#include <omp.h>
 
 int print_matrix = 0;
 int validation = 0;
 
+#define THREADS 16
+
 void mat_mul( float * c, float * a, float * b, int NDIM )
 {
-	int i, j, k;
-	
-	// C = AB
-	for( i = 0; i < NDIM; i++ )
-	{
-		for( j = 0; j < NDIM; j++ )
-		{
-			for( k = 0; k < NDIM; k++ )
-			{
-				c[i * NDIM + j] += a[i * NDIM + k] * b[k * NDIM + j];
-			}
-		}
-	}
+    omp_set_num_threads(THREADS);
+    int i, j, k, I, tid;
+
+    #pragma omp parallel private(i, I, j, k, tid) shared(a, b, c, NDIM)
+    {
+        tid = omp_get_thread_num();
+        I = tid*NDIM/THREADS;
+        for( i = 0; i < NDIM/THREADS; i++ )
+        {
+            for( k = 0; k < NDIM; k++ )
+            {
+                for( j = 0; j < NDIM; j++ )
+                {
+                    #pragma omp atomic update
+                    c[(I + i) * NDIM + j] += a[(I + i) * NDIM + k] * b[k * NDIM + j];
+                }
+            }
+        }
+    }
 }
 
 /************************** DO NOT TOUCH BELOW HERE ******************************/

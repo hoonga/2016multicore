@@ -2,7 +2,7 @@ TARGET=mat_mul
 OBJS=mat_mul.o timers.o
 
 CC=gcc
-CFLAGS=-g -O2 -Wall
+CFLAGS=-g -O2 -Wall -fopenmp
 LDFLAGS=
 
 all: $(TARGET)
