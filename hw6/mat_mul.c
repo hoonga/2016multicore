@@ -9,7 +9,9 @@
 int print_matrix = 0;
 int validation = 0;
 
+#ifndef THREADS
 #define THREADS 16
+#endif
 
 void mat_mul( float * c, float * a, float * b, int NDIM )
 {
@@ -26,7 +28,6 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
             {
                 for( j = 0; j < NDIM; j++ )
                 {
-                    #pragma omp atomic update
                     c[(I + i) * NDIM + j] += a[(I + i) * NDIM + k] * b[k * NDIM + j];
                 }
             }
