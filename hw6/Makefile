@@ -2,13 +2,13 @@ TARGET=mat_mul
 OBJS=mat_mul.o timers.o
 
 CC=gcc
-CFLAGS=-g -O2 -Wall -fopenmp
-LDFLAGS=
+CFLAGS=-g -O2 -Wall -fopenmp -DTHREADS=32
+LDFLAGS=-fopenmp
 
 all: $(TARGET)
 
 $(TARGET):$(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) -o $@
+	$(CC) $(OBJS) -o $@ $(LDFLAGS) 
 
 clean:
 	rm -rf $(TARGET) $(OBJS) task*
