@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include "timers.h"
+#include <immintrin.h>
 
 int print_matrix = 0;
 int validation = 0;
@@ -13,16 +14,44 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
 	int i, j, k;
 	
 	// C = AB
+#ifdef INTRINSIC1
+	// transpose!
+	float * b_trans = malloc(sizeof(float)*NDIM*NDIM);
 	for( i = 0; i < NDIM; i++ )
 	{
 		for( j = 0; j < NDIM; j++ )
 		{
-			for( k = 0; k < NDIM; k++ )
+			b_trans[j*NDIM+i] = b[i*NDIM+j];
+		}
+	}
+	for( i = 0; i < NDIM; i++ )
+	{
+		for( j = 0; j < NDIM; j+=8 )
+		{
+			__m256 c_vec = _mm256_load_ps(&c[i*NDIM+j]);
+			for( k = 0; k < NDIM; k+= 8 )
+			{
+				__m256 a_vec = _mm256_load_ps(&a[i*NDIM+k]);
+				__m256 b_vec = _mm256_load_ps(&b_trans[j*NDIM+k]);
+				__m256 tmp = _mm256_mul_ps(a_vec, b_vec);
+				c_vec = _mm256_add_ps(c_vec, tmp);
+			}
+			_mm256_store_ps(&c[i*NDIM+j], c_vec);
+		}
+	}
+#elif defined IN
+#else
+	for( i = 0; i < NDIM; i++ )
+	{
+		for( k = 0; k < NDIM; k++)
+		{
+			for( j = 0; j < NDIM; j++ )
 			{
 				c[i * NDIM + j] += a[i * NDIM + k] * b[k * NDIM + j];
 			}
 		}
 	}
+#endif
 }
 
 /************************** DO NOT TOUCH BELOW HERE ******************************/
