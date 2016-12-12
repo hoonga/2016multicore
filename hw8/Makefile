@@ -2,7 +2,7 @@ TARGET=mat_mul
 OBJS=mat_mul.o timers.o
 
 CC=gcc
-CFLAGS=-mavx -g -O2 -Wall -DINTRINSIC1
+CFLAGS=-mavx -g -O3 -Wall -DINTRINSIC
 LDFLAGS=
 
 all: $(TARGET)

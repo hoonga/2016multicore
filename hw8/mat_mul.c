@@ -14,32 +14,22 @@ void mat_mul( float * c, float * a, float * b, int NDIM )
 	int i, j, k;
 	
 	// C = AB
-#ifdef INTRINSIC1
-	// transpose!
-	float * b_trans = malloc(sizeof(float)*NDIM*NDIM);
+#ifdef INTRINSIC
 	for( i = 0; i < NDIM; i++ )
 	{
-		for( j = 0; j < NDIM; j++ )
+		for( k = 0; k < NDIM; k++ )
 		{
-			b_trans[j*NDIM+i] = b[i*NDIM+j];
-		}
-	}
-	for( i = 0; i < NDIM; i++ )
-	{
-		for( j = 0; j < NDIM; j+=8 )
-		{
-			__m256 c_vec = _mm256_load_ps(&c[i*NDIM+j]);
-			for( k = 0; k < NDIM; k+= 8 )
+			__m256 a_vec = _mm256_broadcast_ss(&a[i*NDIM+k]);
+			for( j = 0; j < NDIM; j+=8 )
 			{
-				__m256 a_vec = _mm256_load_ps(&a[i*NDIM+k]);
-				__m256 b_vec = _mm256_load_ps(&b_trans[j*NDIM+k]);
+				__m256 c_vec = _mm256_load_ps(&c[i*NDIM+j]);
+				__m256 b_vec = _mm256_load_ps(&b[k*NDIM+j]);
 				__m256 tmp = _mm256_mul_ps(a_vec, b_vec);
-				c_vec = _mm256_add_ps(c_vec, tmp);
+				__m256 result = _mm256_add_ps(c_vec, tmp);
+				_mm256_store_ps(&c[i*NDIM+j], result);
 			}
-			_mm256_store_ps(&c[i*NDIM+j], c_vec);
 		}
 	}
-#elif defined IN
 #else
 	for( i = 0; i < NDIM; i++ )
 	{
@@ -156,9 +146,9 @@ int main(int argc, char** argv)
   NDIM = atoi(argv[1]);
 	parse_opt( argc, argv );
 
-  a = (float *)malloc(sizeof(float) * NDIM * NDIM);
-  b = (float *)malloc(sizeof(float) * NDIM * NDIM);
-  c = (float *)malloc(sizeof(float) * NDIM * NDIM);
+  a = (float *)_mm_malloc(sizeof(float) * NDIM * NDIM, 32);
+  b = (float *)_mm_malloc(sizeof(float) * NDIM * NDIM, 32);
+  c = (float *)_mm_malloc(sizeof(float) * NDIM * NDIM, 32);
 
   printf("%d x %d x %d\n", NDIM, NDIM, NDIM);
 
