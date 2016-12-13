@@ -67,6 +67,7 @@ static void convolution_layer(float * inputs, float * outputs, float * filters, 
 
   memset(outputs, 0, sizeof(float) * N * N * D2);
 
+  // opencl the whole proccess?
   for(j = 0; j < D2; j++)
   {
     for(i = 0; i < D1; i++)
