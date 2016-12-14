@@ -62,16 +62,3 @@ __kernel void convolution_layer(__global float * inputs, __global float * output
     for(i = 0; i < N * N; i++)
         output[i] = ReLU(output[i] + bias);
 }
-
-__kernel void fc_layer(__global float * input, __global float * output, __global float *weights, __global float * biases, int N)
-{
-    int i;
-    float sum = 0;
-    size_t j = get_global_id(0);
-    for(i = 0; i < N; i++)
-    {
-        sum += input[i] * weights[j * N + i];
-    }
-    sum += biases[j];
-    output[j] = ReLU(sum);
-}
