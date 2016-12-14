@@ -9,7 +9,7 @@ all: vggnet
 
 .PHONY: all vggnet
 
-vggnet: vggnet.o main.o
+vggnet: vggnet.o main.o compiletest.o
 	${CC} $^ -o $@ ${LDFLAGS}
 
 clean:
