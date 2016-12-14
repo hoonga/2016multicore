@@ -1,18 +1,6 @@
-__kernel void pooling_layer(__global float * inputs, __global float * outputs,
-        int N)
-{
-    // local size == 16
-    // global size == D!
-    size_t i = get_global_id(0); // i of sequential code
-    float * input = inputs + i * N * N * 4;
-    float * output = outputs + i * N * N;
-    pooling2x2(input, output, N);
-}
-
-void pooling2x2(float * input, float output, int N)
+void pooling2x2(__global float * input, __global float * output, int N)
 {
     int i, j;
-    N = N/16;
     for(i = 0; i < N; i++)
     {
         for(j = 0; j < N; j++)
@@ -24,4 +12,12 @@ void pooling2x2(float * input, float output, int N)
             output[i*N+j] = m;
         }
     }
+}
+__kernel void pooling_layer(__global float * inputs, __global float * outputs, int N)
+{
+    size_t i = get_global_id(0);
+    printf("%d", i);
+    __global float * input = inputs + i * N * N * 4;
+    __global float * output = outputs + i * N * N;
+    pooling2x2(input, output, N);
 }
