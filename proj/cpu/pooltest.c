@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <CL/opencl.h>
 #include <time.h>
 
@@ -82,48 +83,60 @@ void CL_CHECK(cl_int err) {
     if(err) {puts(getErrorString(err)); exit(0);}
 }
 
-static void my_pooling(float * input, float * output, int N)
+static void convolution3x3(float * input, float * output, float * filter, int N)
 {
-  // hard for gpu optimization, opencl optimization?
+  // perfect for opencl
   int i, j, k, l;
   for(i = 0; i < N; i++)
   {
-    for(k = 0; k < 2; k++)
+    for(j = 0; j < N; j++)
     {
-      for(j = 0; j < N; j++)
+      float sum = 0;
+      for(k = 0; k < 3; k++)
       {
-        float max = output[i*N+j];
-        for(l = 0; l < 2; l++)
+        for(l = 0; l < 3; l++)
         {
-          float pixel = input[(i * 2 + k) * 2 * N + j * 2 + l];
-          max = (max > pixel) ? max : pixel;
+          int x = i + k - 1;
+          int y = j + l - 1;
+          if(x >= 0 && x < N && y >= 0 && y < N)
+            sum += input[x * N + y] * filter[k * 3 + l];
         }
-        output[i * N + j] = max;
       }
+      output[i * N + j] += sum;
+    }
+  }
+}
+#define ReLU(x) (((x)>0)?(x):0)
+static void convolution_layer(float * inputs, float * outputs, float * filters, float * biases, int N, int D1, int D2)
+{
+  int i, j;
+
+  memset(outputs, 0, sizeof(float) * N * N * D2);
+
+  // opencl the whole proccess?
+  for(j = 0; j < D2; j++)
+  {
+    for(i = 0; i < D1; i++)
+    {
+      float * input = inputs + N * N * i;
+      float * output = outputs + N * N * j;
+      float * filter = filters + 3 * 3 * (j * D1 + i);
+      convolution3x3(input, output, filter, N);
+    }
+  }
+
+  for(i = 0; i < D2; i++)
+  {
+    float * output = outputs + N * N * i;
+    float bias = biases[i];
+    // optimizable
+    for(j = 0; j < N * N; j++)
+    {
+      output[j] = ReLU(output[j] + bias);
     }
   }
 }
 
-static void pooling(float * input, float * output, int N)
-{
-  int i, j, k, l;
-  for (i = 0; i < N; i++)
-  {
-    for (j = 0; j < N; j++)
-    {
-      float max = 0;
-      for(k = 0; k < 2; k++)
-      {
-        for(l = 0; l < 2; l++)
-        {
-          float pixel = input[(i * 2 + k) * 2 * N + j * 2 + l];
-          max = (max > pixel) ? max : pixel;
-        }
-      }
-      output[i*N+j] = max;
-    }
-  }
-}
 int timespec_subtract(struct timespec* result, struct timespec *x, struct timespec *y) {
   if (x->tv_nsec < y->tv_nsec) {
     int nsec = (y->tv_nsec - x->tv_nsec) / 1000000000 + 1;
@@ -142,34 +155,30 @@ int timespec_subtract(struct timespec* result, struct timespec *x, struct timesp
 }
 int main() {
   int i;
-  float * a = (float*)malloc(sizeof(float)*512*512*4);
-  float * b = (float*)malloc(sizeof(float)*512*512);
-  a[0] = 8.0;
+  int D1 = 64, D2 = 64;
+  int N = 224;
+  float * in = (float*)malloc(sizeof(float)*N*N*D1);
+  float * out = (float*)malloc(sizeof(float)*N*N*D2);
+  float * fil = (float*)malloc(sizeof(float)*3*3*D1*D2);
+  float * bias = (float*)malloc(sizeof(float)*D2);
+  in[0] = 8.0;
+  fil[0] = 23;
+  bias[0] = 2;
   struct timespec start, end, spent;
   clock_gettime(CLOCK_MONOTONIC, &start);
-  for (i = 0; i < 100; i++)
-    my_pooling(a, b, 512);
+    convolution_layer(in, out, fil, bias, N, D1, D2);
   clock_gettime(CLOCK_MONOTONIC, &end);
   timespec_subtract(&spent, &end, &start);
   printf("Elapsed time: %ld.%03ld sec\n", spent.tv_sec, spent.tv_nsec/1000/1000);
-  printf("%f\n", b[0]);
-  b[0] = 0;
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  for (i = 0; i < 100; i++)
-    pooling(a, b, 512);
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  timespec_subtract(&spent, &end, &start);
-  printf("Elapsed time: %ld.%03ld sec\n", spent.tv_sec, spent.tv_nsec/1000/1000);
-  printf("%f\n", b[0]);
-  b[0] = 0;
+  printf("%f\n", out[0]);
+  out[0] = 0;
   clock_gettime(CLOCK_MONOTONIC, &start);
   cl_platform_id pid;
   cl_device_id did;
   cl_context c;
   cl_command_queue q;
   cl_program p;
-  cl_mem A;
-  cl_mem B;
+  cl_mem IN, OUT, FIL, BIAS;
   cl_kernel k;
   const char* f = "./cpu.cl";
   FILE*fp = fopen(f, "r");
@@ -183,8 +192,10 @@ int main() {
   CL_CHECK(res);
   q = clCreateCommandQueue(c, did, 0, &res);
   CL_CHECK(res);
-  A = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, 512*512*4*sizeof(float), a, NULL);
-  B = clCreateBuffer(c, CL_MEM_WRITE_ONLY|CL_MEM_USE_HOST_PTR, 512*512*4*sizeof(float), b, NULL);
+  IN = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, N*N*D1*sizeof(float), in, NULL);
+  OUT = clCreateBuffer(c, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, N*N*D2*sizeof(float), out, NULL);
+  FIL = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, 3*3*D1*D2*sizeof(float), fil, NULL);
+  BIAS = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, D2*sizeof(float), bias, NULL);
   p = clCreateProgramWithSource(c, 1, (const char **)&src, (const size_t*)&size, NULL);
   clBuildProgram(p, 1, &did, NULL, NULL, NULL);
   size_t len;
@@ -193,21 +204,21 @@ int main() {
   buffer = malloc(len);
   clGetProgramBuildInfo(p, did, CL_PROGRAM_BUILD_LOG, len, buffer, NULL);
   printf("%s\n", buffer);
-  k = clCreateKernel(p, "pooling_layer", NULL);
-  clSetKernelArg(k, 0, sizeof(cl_mem), (void*)&A);
-  clSetKernelArg(k, 1, sizeof(cl_mem), (void*)&B);
-  int N = 512;
-  clSetKernelArg(k, 2, sizeof(int), (void*)&N);
-  size_t global[1] = {1};
-  size_t local[1] = {1};
-  for(i = 0; i < 100; i++)
-    clEnqueueNDRangeKernel(q, k, 1, NULL, global, local, 0, NULL, NULL);
-  clEnqueueReadBuffer(q, B, CL_TRUE, 0, 512*512*sizeof(float), dest, 0, NULL,NULL); 
+  k = clCreateKernel(p, "convolution_layer", NULL);
+  clSetKernelArg(k, 0, sizeof(cl_mem), (void*)&IN);
+  clSetKernelArg(k, 1, sizeof(cl_mem), (void*)&OUT);
+  clSetKernelArg(k, 2, sizeof(cl_mem), (void*)&FIL);
+  clSetKernelArg(k, 3, sizeof(cl_mem), (void*)&BIAS);
+  clSetKernelArg(k, 4, sizeof(int), (void*)&N);
+  clSetKernelArg(k, 5, sizeof(int), (void*)&D1);
+  size_t global[1] = {D2};
+  size_t local[1] = {16};
+  clEnqueueNDRangeKernel(q, k, 1, NULL, global, local, 0, NULL, NULL);
+  clEnqueueReadBuffer(q, OUT, CL_TRUE, 0, N*N*D2*sizeof(float), out, 0, NULL, NULL);
   clock_gettime(CLOCK_MONOTONIC, &end);
   timespec_subtract(&spent, &end, &start);
   printf("Elapsed time: %ld.%03ld sec\n", spent.tv_sec, spent.tv_nsec/1000/1000);
-  printf("%f\n", dest[0]);
-  printf("%f\n", b[0]);
+  printf("%f\n", out[0]);
 
   return 0;
 }
