@@ -47,7 +47,7 @@ void convolution3x3(__global float * input, __global float * output,
 
 #define ReLU(x) (((x)>0)?(x):0)
 __kernel void convolution_layer(__global float * inputs, __global float * outputs,
-        __global float * biases, int N, int D1)
+        __global float * filters, __global float * biases, int N, int D1)
 {
     size_t j = get_global_id(0);
     int i;
@@ -55,7 +55,7 @@ __kernel void convolution_layer(__global float * inputs, __global float * output
         __global float * input = inputs + N * N * i;
         __global float * output = outputs + N * N * j;
         __global float * filter = filters + 3 * 3 * (j * D1 + i);
-        convolution3x3(input, output, N);
+        convolution3x3(input, output, filter, N);
     }
     __global float * output = outputs + N * N * j;
     float bias = biases[j];
