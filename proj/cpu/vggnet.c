@@ -36,7 +36,6 @@ static void pooling_layer(float * inputs, float * outputs, int N, int D)
 {
   cl_mem IN = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, sizeof(float)*N*N*4, inputs, NULL);
   cl_mem OUT = clCreateBuffer(c, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, sizeof(float)*N*N, outputs, NULL);
-  //printf("%f\n", inputs[0]);
   clSetKernelArg(pool, 0, sizeof(cl_mem), (void*)&IN);
   clSetKernelArg(pool, 1, sizeof(cl_mem), (void*)&OUT);
   clSetKernelArg(pool, 2, sizeof(int), (void*)&N);
