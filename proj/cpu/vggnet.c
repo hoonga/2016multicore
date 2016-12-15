@@ -81,7 +81,6 @@ static void convolution_layer(float * inputs, float * outputs, float * filters, 
   // int i, j;
 
   memset(outputs, 0, sizeof(float) * N * N * D2);
-  printf("%f\n", inputs[0]);
   cl_mem IN = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, sizeof(float)*N*N*D1, inputs, NULL);
   cl_mem OUT = clCreateBuffer(c, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, sizeof(float)*N*N*D2, outputs, NULL);
   cl_mem FIL = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, sizeof(float)*3*3*D1*D2, filters, NULL);
