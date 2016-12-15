@@ -2,6 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <CL/opencl.h>
+#include "kernels.h"
+#include "compiletest.h"
+
+static cl_context c;
+static cl_kernel pool;
+static cl_kernel big_conv;
+static cl_kernel small_conv;
+static cl_command_queue q;
 
 static void pooling2x2(float * input, float * output, int N)
 {
@@ -61,11 +70,49 @@ static void convolution3x3(float * input, float * output, float * filter, int N)
 #define ReLU(x) (((x)>0)?(x):0)
 static void convolution_layer(float * inputs, float * outputs, float * filters, float * biases, int N, int D1, int D2)
 {
-  int i, j;
+  //int i, j;
 
   memset(outputs, 0, sizeof(float) * N * N * D2);
 
-  for(j = 0; j < D2; j++)
+    cl_mem IN = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, sizeof(float)*N*N*D1, inputs, NULL);
+    cl_mem OUT = clCreateBuffer(c, CL_MEM_WRITE_ONLY, sizeof(float)*N*N*D2, outputs, NULL);
+    cl_mem FIL = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, sizeof(float)*3*3*D1*D2, filters, NULL);
+    cl_mem BI = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, sizeof(float)*D2, biases, NULL);
+  if (N > 64)
+  {
+    printf("%d\n", N);
+    clSetKernelArg(big_conv, 0, sizeof(cl_mem), (void*)&IN);
+    clSetKernelArg(big_conv, 1, sizeof(cl_mem), (void*)&OUT);
+    clSetKernelArg(big_conv, 2, sizeof(cl_mem), (void*)&FIL);
+    clSetKernelArg(big_conv, 3, sizeof(cl_mem), (void*)&BI);
+    clSetKernelArg(big_conv, 4, sizeof(int), (void*)&N);
+    clSetKernelArg(big_conv, 5, sizeof(int), (void*)&D1);
+    clSetKernelArg(big_conv, 6, sizeof(int), (void*)&D2);
+    clSetKernelArg(big_conv, 7, sizeof(float)*N*16, NULL);
+    size_t g[1] = {D1*N*N};
+    size_t l[1] = {N*16};
+    clEnqueueNDRangeKernel(q, big_conv, 1, NULL, g, l, 0, NULL, NULL);
+  }
+  else
+  {
+    clSetKernelArg(small_conv, 0, sizeof(cl_mem), (void*)&IN);
+    clSetKernelArg(small_conv, 1, sizeof(cl_mem), (void*)&OUT);
+    clSetKernelArg(small_conv, 2, sizeof(cl_mem), (void*)&FIL);
+    clSetKernelArg(small_conv, 3, sizeof(cl_mem), (void*)&BI);
+    clSetKernelArg(small_conv, 4, sizeof(int), (void*)&N);
+    clSetKernelArg(small_conv, 5, sizeof(int), (void*)&D1);
+    clSetKernelArg(small_conv, 6, sizeof(int), (void*)&D2);
+    clSetKernelArg(small_conv, 6, sizeof(int), (void*)&D2);
+    clSetKernelArg(small_conv, 7, sizeof(float)*N*N, NULL);
+    size_t g[1] = {D1*N*N};
+    size_t l[1] = {N*N};
+    CL_CHECK(clEnqueueNDRangeKernel(q, small_conv, 1, NULL, g, l, 0, NULL, NULL));
+  }
+  clEnqueueReadBuffer(q, OUT, CL_FALSE, 0, sizeof(float)*N*N*D2, outputs, 0, NULL, NULL);
+  clFinish(q);
+  printf("%f\n", outputs[0]);
+
+/*  for(j = 0; j < D2; j++)
   {
     for(i = 0; i < D1; i++)
     {
@@ -84,7 +131,7 @@ static void convolution_layer(float * inputs, float * outputs, float * filters, 
     {
       output[j] = ReLU(output[j] + bias);
     }
-  }
+  }*/
 }
 
 static void fc_layer(float * input_neuron, float * output_neuron, float * weights, float * biases, int N, int M)
@@ -223,6 +270,33 @@ void vggnet(float * images, float * network, int * labels, float * confidences, 
   b2 = get_param(&network, 4096);
   w3 = get_param(&network, 4096 * 1000);
   b3 = get_param(&network, 1000);
+  cl_platform_id pid[1];
+  CL_CHECK(clGetPlatformIDs(1, pid, NULL));
+
+  cl_device_id did[1];
+  CL_CHECK(clGetDeviceIDs(pid[0], CL_DEVICE_TYPE_GPU, 1, did, NULL));
+
+  cl_int res;
+  c = clCreateContext(NULL, 1, did, NULL, NULL, &res);
+  CL_CHECK(res);
+
+  q = clCreateCommandQueue(c, did[0], 0, &res);
+  CL_CHECK(res);
+
+  cl_program p = clCreateProgramWithSource(c, 1, (const char **)&kernel, NULL, &res);
+  CL_CHECK(res);
+  clBuildProgram(p, 1, did, NULL, NULL, NULL);
+  size_t log_size;
+  clGetProgramBuildInfo(p, did[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+  char *log = (char *) malloc(log_size);
+  clGetProgramBuildInfo(p, did[0], CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+  printf("%s\n", log);
+  //pool = clCreateKernel(p, "pooling_layer", &res);
+  //CL_CHECK(res);
+  big_conv = clCreateKernel(p, "big_convolution_layer", &res);
+  CL_CHECK(res);
+  small_conv = clCreateKernel(p, "small_convolution_layer", &res);
+  CL_CHECK(res);
 
   for(i = 0; i < num_images; i++)
   {
@@ -251,6 +325,7 @@ void vggnet(float * images, float * network, int * labels, float * confidences, 
     convolution_layer(c5_2, c5_3, f5_3, b5_3, 14, 512, 512);
     pooling_layer(c5_3, p5, 7, 512);
 
+    clFinish(q);
     fc_layer(p5, fc1, w1, b1, 7 * 7 * 512, 4096);
     fc_layer(fc1, fc2, w2, b2, 4096, 4096);
     fc_layer(fc2, fc3, w3, b3, 4096, 1000);

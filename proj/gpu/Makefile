@@ -9,8 +9,8 @@ all: vggnet
 
 .PHONY: all vggnet
 
-vggnet: vggnet.o main.o
+vggnet: vggnet.o main.o compiletest.o
 	${CC} $^ -o $@ ${LDFLAGS}
 
 clean:
-	rm -f vggnet.o main.o vggnet task*
+	rm -f vggnet.o main.o compiletest.o vggnet task*
