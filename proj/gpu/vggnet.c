@@ -73,7 +73,6 @@ static void convolution_layer(float * inputs, float * outputs, float * filters, 
 
   memset(outputs, 0, sizeof(float) * N * N * D2);
 
-  printf("tokernel=%f\n", inputs[0]);
   cl_mem IN = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, sizeof(float)*N*N*D1, inputs, NULL);
   cl_mem OUT = clCreateBuffer(c, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, sizeof(float)*N*N*D2, outputs, NULL);
   cl_mem FIL = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, sizeof(float)*3*3*D1*D2, filters, NULL);
@@ -90,10 +89,8 @@ static void convolution_layer(float * inputs, float * outputs, float * filters, 
   size_t g[3] = {D2, N, N};
   size_t l[3] = {1, 14, 14};
   CL_CHECK(clEnqueueNDRangeKernel(q, conv, 3, NULL, g, l, 0, NULL, NULL));
-  clFinish(q);
   CL_CHECK(clEnqueueReadBuffer(q, OUT, CL_TRUE, 0, sizeof(float)*N*N*D2, outputs, 0, NULL, NULL));
   clFinish(q);
-  printf("result=%f\n", outputs[0]);
 
 /*  for(j = 0; j < D2; j++)
   {
