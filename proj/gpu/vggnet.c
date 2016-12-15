@@ -8,8 +8,7 @@
 
 static cl_context c;
 static cl_kernel pool;
-static cl_kernel big_conv;
-static cl_kernel small_conv;
+static cl_kernel conv;
 static cl_command_queue q;
 
 static void pooling2x2(float * input, float * output, int N)
@@ -74,43 +73,27 @@ static void convolution_layer(float * inputs, float * outputs, float * filters, 
 
   memset(outputs, 0, sizeof(float) * N * N * D2);
 
-    cl_mem IN = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, sizeof(float)*N*N*D1, inputs, NULL);
-    cl_mem OUT = clCreateBuffer(c, CL_MEM_WRITE_ONLY, sizeof(float)*N*N*D2, outputs, NULL);
-    cl_mem FIL = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, sizeof(float)*3*3*D1*D2, filters, NULL);
-    cl_mem BI = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, sizeof(float)*D2, biases, NULL);
-  if (N > 64)
-  {
-    printf("%d\n", N);
-    clSetKernelArg(big_conv, 0, sizeof(cl_mem), (void*)&IN);
-    clSetKernelArg(big_conv, 1, sizeof(cl_mem), (void*)&OUT);
-    clSetKernelArg(big_conv, 2, sizeof(cl_mem), (void*)&FIL);
-    clSetKernelArg(big_conv, 3, sizeof(cl_mem), (void*)&BI);
-    clSetKernelArg(big_conv, 4, sizeof(int), (void*)&N);
-    clSetKernelArg(big_conv, 5, sizeof(int), (void*)&D1);
-    clSetKernelArg(big_conv, 6, sizeof(int), (void*)&D2);
-    clSetKernelArg(big_conv, 7, sizeof(float)*N*16, NULL);
-    size_t g[1] = {D1*N*N};
-    size_t l[1] = {N*16};
-    clEnqueueNDRangeKernel(q, big_conv, 1, NULL, g, l, 0, NULL, NULL);
-  }
-  else
-  {
-    clSetKernelArg(small_conv, 0, sizeof(cl_mem), (void*)&IN);
-    clSetKernelArg(small_conv, 1, sizeof(cl_mem), (void*)&OUT);
-    clSetKernelArg(small_conv, 2, sizeof(cl_mem), (void*)&FIL);
-    clSetKernelArg(small_conv, 3, sizeof(cl_mem), (void*)&BI);
-    clSetKernelArg(small_conv, 4, sizeof(int), (void*)&N);
-    clSetKernelArg(small_conv, 5, sizeof(int), (void*)&D1);
-    clSetKernelArg(small_conv, 6, sizeof(int), (void*)&D2);
-    clSetKernelArg(small_conv, 6, sizeof(int), (void*)&D2);
-    clSetKernelArg(small_conv, 7, sizeof(float)*N*N, NULL);
-    size_t g[1] = {D1*N*N};
-    size_t l[1] = {N*N};
-    CL_CHECK(clEnqueueNDRangeKernel(q, small_conv, 1, NULL, g, l, 0, NULL, NULL));
-  }
-  clEnqueueReadBuffer(q, OUT, CL_FALSE, 0, sizeof(float)*N*N*D2, outputs, 0, NULL, NULL);
+  printf("tokernel=%f\n", inputs[0]);
+  cl_mem IN = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, sizeof(float)*N*N*D1, inputs, NULL);
+  cl_mem OUT = clCreateBuffer(c, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, sizeof(float)*N*N*D2, outputs, NULL);
+  cl_mem FIL = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, sizeof(float)*3*3*D1*D2, filters, NULL);
+  cl_mem BI = clCreateBuffer(c, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, sizeof(float)*D2, biases, NULL);
+  clSetKernelArg(conv, 0, sizeof(cl_mem), (void*)&IN);
+  clSetKernelArg(conv, 1, sizeof(cl_mem), (void*)&OUT);
+  clSetKernelArg(conv, 2, sizeof(cl_mem), (void*)&FIL);
+  clSetKernelArg(conv, 3, sizeof(cl_mem), (void*)&BI);
+  clSetKernelArg(conv, 4, sizeof(int), (void*)&N);
+  clSetKernelArg(conv, 5, sizeof(int), (void*)&D1);
+  clSetKernelArg(conv, 6, sizeof(int), (void*)&D2);
+  clSetKernelArg(conv, 7, sizeof(float)*16*16, NULL);
+  clSetKernelArg(conv, 8, sizeof(float)*9, NULL);
+  size_t g[3] = {D2, N, N};
+  size_t l[3] = {1, 14, 14};
+  CL_CHECK(clEnqueueNDRangeKernel(q, conv, 3, NULL, g, l, 0, NULL, NULL));
   clFinish(q);
-  printf("%f\n", outputs[0]);
+  CL_CHECK(clEnqueueReadBuffer(q, OUT, CL_TRUE, 0, sizeof(float)*N*N*D2, outputs, 0, NULL, NULL));
+  clFinish(q);
+  printf("result=%f\n", outputs[0]);
 
 /*  for(j = 0; j < D2; j++)
   {
@@ -293,9 +276,7 @@ void vggnet(float * images, float * network, int * labels, float * confidences, 
   printf("%s\n", log);
   //pool = clCreateKernel(p, "pooling_layer", &res);
   //CL_CHECK(res);
-  big_conv = clCreateKernel(p, "big_convolution_layer", &res);
-  CL_CHECK(res);
-  small_conv = clCreateKernel(p, "small_convolution_layer", &res);
+  conv = clCreateKernel(p, "convolution_layer", &res);
   CL_CHECK(res);
 
   for(i = 0; i < num_images; i++)
