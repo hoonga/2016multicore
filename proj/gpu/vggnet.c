@@ -3,11 +3,11 @@
 #include <string.h>
 #include <math.h>
 #include <CL/opencl.h>
+#include <time.h>
 #include "kernels.h"
 #include "compiletest.h"
 
 static cl_context c;
-static cl_kernel pool;
 static cl_kernel conv;
 static cl_command_queue q;
 
@@ -90,7 +90,6 @@ static void convolution_layer(float * inputs, float * outputs, float * filters, 
   size_t l[3] = {1, 14, 14};
   CL_CHECK(clEnqueueNDRangeKernel(q, conv, 3, NULL, g, l, 0, NULL, NULL));
   CL_CHECK(clEnqueueReadBuffer(q, OUT, CL_TRUE, 0, sizeof(float)*N*N*D2, outputs, 0, NULL, NULL));
-  clFinish(q);
 
 /*  for(j = 0; j < D2; j++)
   {
